@@ -50,6 +50,7 @@ class App extends Component {
   };
 
   logoutHandler = () => {
+    fetch('http://localhost:8080/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
     this.setState({ isAuth: false, token: null });
     localStorage.removeItem('token');
     localStorage.removeItem('expiryDate');
@@ -59,7 +60,17 @@ class App extends Component {
   loginHandler = (event, authData) => {
     event.preventDefault();
     this.setState({ authLoading: true });
-    fetch('URL')
+    fetch('http://localhost:8080/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: authData.email,
+        password: authData.password
+      }),
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'  // send/receive cookies (httpOnly token)
+    })
       .then(res => {
         if (res.status === 422) {
           throw new Error('Validation failed.');

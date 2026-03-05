@@ -16,12 +16,15 @@ router.put('/signup', [
         }
       });
     })
-    .normalizeEmail(),
+    .normalizeEmail({ gmail_remove_dots: false }),
   body('password').trim().isLength({ min: 5 }),
   body('name').trim().not().isEmpty()
 ], authController.signup);
 
 // POST /auth/login
 router.post('/login', authController.login);
+
+// POST /auth/logout (clears httpOnly cookie)
+router.post('/logout', authController.logout);
 
 module.exports = router;

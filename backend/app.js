@@ -1,5 +1,6 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
 const path = require('path');
 require('dotenv').config();
@@ -31,13 +32,16 @@ const fileFilter = (req, file, cb) => {
 
 app.use(multer({ storage: fileStorage, fileFilter: fileFilter }).single('image'));
 app.use(bodyParser.json());
+app.use(cookieParser());
 app.use('/images', express.static(path.join(__dirname, 'images')));
 
-// set headers
+// set headers (use specific origin when using cookies + credentials)
+const frontendOrigin = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Origin', frontendOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   next();
 });
 
