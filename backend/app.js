@@ -9,6 +9,7 @@ const app = express();
 const MONGODB_URI = process.env.MONGODB_URI;
 
 const feedRoutes = require('./routes/feed');
+const authRoutes = require('./routes/auth');
 
 // file upload middleware
 const fileStorage = multer.diskStorage({
@@ -16,7 +17,7 @@ const fileStorage = multer.diskStorage({
     cb(null, 'images');
   },
   filename: (req, file, cb) => {
-    cb(null, new Date().getTime() + '-' + file.originalname);
+    cb(null, new Date().toISOString() + '-' + file.originalname);
   }
 });
 
@@ -41,6 +42,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/feed', feedRoutes);
+app.use('/auth', authRoutes);
 
 // error handling middleware
 app.use((error, req, res, next) => {
