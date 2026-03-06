@@ -1,39 +1,36 @@
 const fs = require('fs');
 const path = require('path');
+
 const { validationResult } = require('express-validator');
+
 const Post = require('../models/post');
 const User = require('../models/user');
 
 const ITEMS_PER_PAGE = 2;
 
-exports.getPosts = (req, res, next) => {
-  const currentPage = req.query.page || 1;
-  const perPage = ITEMS_PER_PAGE;
+exports.getPosts = async (req, res, next) => {
+  try {
+    const currentPage = req.query.page || 1;
+    const perPage = ITEMS_PER_PAGE;
 
-  let totalItems;
+    const totalItems = await Post.countDocuments();
+    const posts = await Post.find()
+      .populate('creator')
+      .sort({ createdAt: -1 })
+      .skip((currentPage - 1) * perPage)
+      .limit(perPage);
 
-  Post.find()
-    .countDocuments()
-    .then(count => {
-      totalItems = count;
-      return Post.find()
-        .skip((currentPage - 1) * perPage)
-        .limit(perPage);
-    })
-    .then(posts => {
-      // res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-      res.status(200).json({
-        message: 'Posts fetched successfully.',
-        posts: posts,
-        totalItems: totalItems
-      });
-    })
-    .catch(err => {
-      if(!err.statusCode) {
-        err.statusCode = 500;
-      }
-      next(err);
+    res.status(200).json({
+      message: 'Posts fetched successfully.',
+      posts: posts,
+      totalItems: totalItems
     });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 }
 
 exports.createPost = (req, res, next) => {
@@ -73,6 +70,18 @@ exports.createPost = (req, res, next) => {
       return user.save();
     })
     .then(result => {
+      const io = require('../socket').getIO();
+      io.emit('posts', {
+        action: 'create',
+        post: {
+          _id: post._id,
+          title: post.title,
+          content: post.content,
+          imageUrl: post.imageUrl,
+          creator: { _id: creator._id, name: creator.name },
+          createdAt: post.createdAt
+        }
+      });
       res.status(201).json({
         message: 'Post created successfully',
         post: post,
@@ -91,6 +100,7 @@ exports.getPost = (req, res, next) => {
   const postId = req.params.postId;
 
   Post.findById(postId)
+  .populate('creator')
   .then(post => {
     if(!post) {
       const error = new Error('Could not find post.');
@@ -120,6 +130,8 @@ exports.updatePost = (req, res, next) => {
 
   if (req.file) {
     imageUrl = req.file.path;
+  } else if (imageUrl) {
+    imageUrl = getImagePath(imageUrl); // normalize full URL from client to path
   }
   if (!imageUrl) {
     const error = new Error('No image provided.');
@@ -147,8 +159,9 @@ exports.updatePost = (req, res, next) => {
         error.statusCode = 403;
         throw error;
       }
-
-      if(post.imageUrl !== imageUrl) {
+      const postImagePath = getImagePath(post.imageUrl);
+      const newImagePath = getImagePath(imageUrl);
+      if (postImagePath !== newImagePath && newImagePath !== '') {
         clearImage(post.imageUrl);
       }
 
@@ -158,6 +171,18 @@ exports.updatePost = (req, res, next) => {
       return post.save();
     })
     .then(result => {
+      const io = require('../socket').getIO();
+      io.emit('posts', {
+        action: 'update',
+        post: {
+          _id: result._id,
+          title: result.title,
+          content: result.content,
+          imageUrl: result.imageUrl,
+          creator: result.creator,
+          createdAt: result.createdAt
+        }
+      });
       res.status(200).json({
         message: 'Post updated successfully.',
         post: result
@@ -198,6 +223,8 @@ exports.deletePost = (req, res, next) => {
       return user.save();
     })
     .then(result => {
+      const io = require('../socket').getIO();
+      io.emit('posts', { action: 'delete', postId });
       res.status(200).json({
         message: 'Post deleted successfully.',
         post: result
@@ -210,6 +237,22 @@ exports.deletePost = (req, res, next) => {
       next(err);
     });
 }
+
+/**
+ * Normalize image URL/path for comparison.
+ * "http://localhost:8080/images/xxx.png" -> "images/xxx.png"
+ * "images/xxx.png" -> "images/xxx.png"
+ */
+const getImagePath = (urlOrPath) => {
+  if (!urlOrPath) return '';
+  try {
+    const parsed = new URL(urlOrPath, 'http://dummy');
+    const pathname = parsed.pathname;
+    return pathname.startsWith('/') ? pathname.slice(1) : pathname;
+  } catch {
+    return urlOrPath;
+  }
+};
 
 const clearImage = filePath => {
   filePath = path.join(__dirname, '..', filePath);

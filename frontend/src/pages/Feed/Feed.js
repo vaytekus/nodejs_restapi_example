@@ -1,4 +1,5 @@
 import React, { Component, Fragment } from 'react';
+import io from 'socket.io-client';
 
 import Post from '../../components/Feed/Post/Post';
 import Button from '../../components/Button/Button';
@@ -8,6 +9,14 @@ import Paginator from '../../components/Paginator/Paginator';
 import Loader from '../../components/Loader/Loader';
 import ErrorHandler from '../../components/ErrorHandler/ErrorHandler';
 import './Feed.css';
+
+const API_URL = 'http://localhost:8080';
+
+/** Build full image URL; idempotent if imageUrl is already absolute. */
+function toFullImageUrl(imageUrl) {
+  if (!imageUrl) return null;
+  return imageUrl.startsWith('http') ? imageUrl : `${API_URL}/${imageUrl.replace(/^\//, '')}`;
+}
 
 class Feed extends Component {
   state = {
@@ -35,20 +44,87 @@ class Feed extends Component {
       .catch(this.catchError);
 
     this.loadPosts();
+
+    this.socket = io('http://localhost:8080', {
+      withCredentials: true,
+      transports: ['websocket', 'polling']
+    });
+    this.socket.on('connect', () => {
+      console.log('Connected to server');
+    });
+    this.socket.on('disconnect', () => {
+      console.log('Disconnected from server');
+    });
+
+    this.socket.on('posts', ({ action, post, postId }) => {
+      if (action === 'create') {
+        this.addPost(post);
+      } else if (action === 'update') {
+        this.updatePost(post);
+      } else if (action === 'delete' && postId) {
+        this.deletePost(postId);
+      }
+    });
   }
 
+  componentWillUnmount() {
+    if (this.socket) this.socket.disconnect();
+  }
+
+  addPost = post => {
+    if (!post || !post._id) return;
+    this.setState(prevState => {
+      if (prevState.posts.some(p => p._id === post._id)) return prevState;
+      const newPost = {
+        ...post,
+        imagePath: toFullImageUrl(post.imageUrl)
+      };
+      if (prevState.postPage === 1) {
+        return {
+          posts: [newPost, ...prevState.posts],
+          totalPosts: prevState.totalPosts + 1,
+          postPage: 1
+        };
+      }
+      return {
+        postPage: 1,
+        postsLoading: true
+      };
+    }, () => {
+      if (this.state.postsLoading) this.loadPosts();
+    });
+  };
+
+  updatePost = post => {
+    this.setState(prevState => {
+      const idx = prevState.posts.findIndex(p => p._id === post._id);
+      if (idx === -1) return prevState;
+      const updated = [...prevState.posts];
+      const existing = updated[idx];
+      const merged = {
+        ...existing,
+        ...post,
+        imagePath: toFullImageUrl(post.imageUrl) || existing.imagePath,
+        creator: post.creator && post.creator.name ? post.creator : existing.creator
+      };
+      updated[idx] = merged;
+      return { posts: updated };
+    });
+  };
+
+  deletePost = postId => {
+    this.setState(prevState => ({
+      posts: prevState.posts.filter(p => p._id !== postId),
+      totalPosts: Math.max(0, prevState.totalPosts - 1)
+    }));
+  };
+
   loadPosts = direction => {
+    const page = direction
+      ? (direction === 'next' ? this.state.postPage + 1 : this.state.postPage - 1)
+      : this.state.postPage;
     if (direction) {
-      this.setState({ postsLoading: true, posts: [] });
-    }
-    let page = this.state.postPage;
-    if (direction === 'next') {
-      page++;
-      this.setState({ postPage: page });
-    }
-    if (direction === 'previous') {
-      page--;
-      this.setState({ postPage: page });
+      this.setState({ postsLoading: true, posts: [], postPage: page });
     }
 
     fetch('http://localhost:8080/feed/posts?page=' + page, {
@@ -64,12 +140,10 @@ class Feed extends Component {
       .then(resData => {
         this.setState({
           // posts: resData.posts,
-          posts: resData.posts.map(post => {
-            return {
-              ...post,
-              imagePath: 'http://localhost:8080/' + post.imageUrl
-            };
-          }),
+          posts: resData.posts.map(post => ({
+            ...post,
+            imagePath: toFullImageUrl(post.imageUrl)
+          })),
           totalPosts: resData.totalItems,
           postsLoading: false
         });
@@ -147,26 +221,38 @@ class Feed extends Component {
           _id: resData.post._id,
           title: resData.post.title,
           content: resData.post.content,
+          imageUrl: resData.post.imageUrl,
           creator: resData.post.creator,
           createdAt: resData.post.createdAt
         };
+        let isCreate = false;
         this.setState(prevState => {
-          let updatedPosts = [...prevState.posts];
           if (prevState.editPost) {
             const postIndex = prevState.posts.findIndex(
               p => p._id === prevState.editPost._id
             );
-            updatedPosts[postIndex] = post;
-          // } else if (prevState.posts.length < 2) {
-          } else {
-            updatedPosts = prevState.posts.concat(post);
+            const updated = [...prevState.posts];
+            updated[postIndex] = {
+              ...post,
+              imagePath: toFullImageUrl(post.imageUrl) || prevState.posts[postIndex].imagePath
+            };
+            return {
+              posts: updated,
+              isEditing: false,
+              editPost: null,
+              editLoading: false
+            };
           }
+          isCreate = true;
           return {
-            posts: updatedPosts,
+            postPage: 1,
+            postsLoading: true,
             isEditing: false,
             editPost: null,
             editLoading: false
           };
+        }, () => {
+          if (isCreate) this.loadPosts();
         });
       })
       .catch(err => {
@@ -270,7 +356,7 @@ class Feed extends Component {
                   author={post.creator.name}
                   date={new Date(post.createdAt).toLocaleDateString('en-US')}
                   title={post.title}
-                  image={post.imageUrl}
+                  image={post.imagePath || toFullImageUrl(post.imageUrl)}
                   content={post.content}
                   onStartEdit={this.startEditPostHandler.bind(this, post._id)}
                   onDelete={this.deletePostHandler.bind(this, post._id)}
