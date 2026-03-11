@@ -3,12 +3,22 @@ const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
 const mongoose = require('mongoose');
 const path = require('path');
-require('dotenv').config();
 const multer = require('multer');
+
+// load environment variables based on NODE_ENV
+const nodeEnv = process.env.NODE_ENV;
+let envFile = '.env';
+if (nodeEnv === 'development') {
+  envFile = '.env.development';
+} else if (nodeEnv === 'test') {
+  envFile = '.env.test';
+}
+require('dotenv').config({ path: envFile });
 
 const app = express();
 
 const MONGODB_URI = process.env.MONGODB_URI;
+const BACKEND_PORT = process.env.BACKEND_PORT || 8080;
 
 const feedRoutes = require('./routes/feed');
 const authRoutes = require('./routes/auth');
@@ -59,30 +69,45 @@ app.use((error, req, res, next) => {
   res.status(status).json({ message: message, data: data });
 });
 
-// connect to database
-mongoose
-  .connect(
-    MONGODB_URI
-  )
-  .then(result => {
-    const server = app.listen(8080);
-    const io = socketIO.init(server, {
-      cors: {
-        origin: frontendOrigin,
-        credentials: true
-      }
-    });
+let server;
+let io;
 
-    io.on('connection', socket => {
-      console.log('Client connected');
-      socket.on('disconnect', () => {
-        console.log('Client disconnected');
+function start() {
+  if (server) {
+    return Promise.resolve({ server, io });
+  }
+
+  return mongoose
+    .connect(MONGODB_URI)
+    .then(result => {
+      server = app.listen(BACKEND_PORT);
+      io = socketIO.init(server, {
+        cors: {
+          origin: frontendOrigin,
+          credentials: true
+        }
       });
-      socket.on('message', message => {
-        console.log('Message received:', message);
+
+      io.on('connection', socket => {
+        console.log('Client connected');
+        socket.on('disconnect', () => {
+          console.log('Client disconnected');
+        });
+        socket.on('message', message => {
+          console.log('Message received:', message);
+        });
       });
+
+      return { server, io };
+    })
+    .catch(err => {
+      console.log(err);
+      throw err;
     });
-  })
-  .catch(err => {
-    console.log(err);
-  });
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  start().catch(() => {});
+}
+
+module.exports = { app, start };

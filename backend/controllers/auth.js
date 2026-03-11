@@ -75,6 +75,21 @@ exports.login = async (req, res, next) => {
       secure: process.env.NODE_ENV === 'production'
     });
     res.status(200).json({ token: token, userId: user._id.toString() });
+    return;
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+    return err;
+  }
+
+};
+
+exports.logout = async (req, res, next) => {
+  try {
+    res.clearCookie('token');
+    res.status(200).json({ message: 'Logged out.' });
   } catch (err) {
     if (!err.statusCode) {
       err.statusCode = 500;
@@ -83,10 +98,15 @@ exports.login = async (req, res, next) => {
   }
 };
 
-exports.logout = async (req, res, next) => {
+exports.getUserStatus = async (req, res, next) => {
   try {
-    res.clearCookie('token');
-    res.status(200).json({ message: 'Logged out.' });
+    const user = await User.findById(req.userId);
+    if (!user) {
+      const error = new Error('A user with this id could not be found.');
+      error.statusCode = 404;
+      throw error;
+    }
+    res.status(200).json({ status: user.status });
   } catch (err) {
     if (!err.statusCode) {
       err.statusCode = 500;

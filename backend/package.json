@@ -4,20 +4,24 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon  --env-file=.env.development app.js"
+    "test": "NODE_ENV=test mocha --timeout 10000",
+    "start": "NODE_ENV=development nodemon app.js"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "bcryptjs": "^3.0.3",
+    "chai": "^6.2.2",
+    "chai-http": "^5.1.2",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-validator": "^7.3.1",
     "jsonwebtoken": "^9.0.3",
+    "mocha": "^11.7.5",
     "mongoose": "^9.2.4",
     "multer": "^2.1.1",
+    "sinon": "^21.0.2",
     "socket.io": "^4.8.3"
   },
   "dependencies": {

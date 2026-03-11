@@ -52,7 +52,6 @@ exports.createPost = (req, res, next) => {
   const title = req.body.title;
   const content = req.body.content;
   let creator;
-  // const user = await User.findById(creator);
   const post = new Post({
     title: title,
     content: content,
@@ -60,7 +59,7 @@ exports.createPost = (req, res, next) => {
     creator: req.userId
   });
   
-  post.save()
+  return post.save()
     .then(result => {
       return User.findById(result.creator);
     })
@@ -87,6 +86,7 @@ exports.createPost = (req, res, next) => {
         post: post,
         creator: { _id: creator._id, name: creator.name }
       });
+      return creator;
     })
     .catch(err => {
       if (!err.statusCode) {
